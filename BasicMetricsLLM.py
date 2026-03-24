@@ -8,7 +8,7 @@ from langchain_openai import ChatOpenAI
 from openai import OpenAI
 from ragas.llms import llm_factory, LangchainLLMWrapper
 from ragas import SingleTurnSample
-from ragas.metrics import LLMContextPrecisionWithoutReference, LLMContextRecall
+from ragas.metrics import LLMContextPrecisionWithoutReference, LLMContextRecall, Faithfulness
 
 
 @pytest.mark.asyncio
@@ -53,4 +53,24 @@ async def test_context_recall():
     )
     context_recall = LLMContextRecall(llm=llm_wrapper)
     score = await context_recall.single_turn_ascore(sample)
+    assert score > 0.9
+
+async  def test_faithfulness():
+    llm = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    wrapped_llm = llm_factory('gpt-4o-mini', client=llm)
+    question = "How many articles are there in selenium python course?"
+    response = requests.post(url="https://rahulshettyacademy.com/rag-llm/ask",json={
+        "question": question,
+        "chat_history": [
+        ]
+    }
+    ).json()
+    retrieved_docs_length = len(response["retrieved_docs"])
+    sample = SingleTurnSample(
+        user_input=question,
+        response=response["answer"],
+        retrieved_contexts=[response["retrieved_docs"][i]["page_content"] for i in range(retrieved_docs_length)]
+    )
+    faithfulness = Faithfulness(llm=wrapped_llm)
+    score = faithfulness.single_turn_ascore(sample)
     assert score > 0.9
