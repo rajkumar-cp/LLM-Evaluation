@@ -72,5 +72,5 @@ async  def test_faithfulness():
         retrieved_contexts=[response["retrieved_docs"][i]["page_content"] for i in range(retrieved_docs_length)]
     )
     faithfulness = Faithfulness(llm=wrapped_llm)
-    score = faithfulness.single_turn_ascore(sample)
+    score = await faithfulness.single_turn_ascore(sample)
     assert score > 0.9
