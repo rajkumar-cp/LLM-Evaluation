@@ -1,14 +1,19 @@
 import os
 
 import pytest
+from instructor.cli.jobs import client
+from langchain_openai import ChatOpenAI
 from openai import OpenAI
-from ragas.llms import llm_factory
+from ragas.llms import llm_factory, LangchainLLMWrapper
 from ragas import SingleTurnSample
 from ragas.metrics import LLMContextPrecisionWithoutReference
+
 
 @pytest.mark.asyncio
 async def test_context_precision_without_reference():
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    #client = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    #wrapped_llm = LangchainLLMWrapper(client)
     wrapped_llm = llm_factory('gpt-4o-mini', client=client)
     sample = SingleTurnSample(
         user_input="How many articles are there in selenium python course?",
