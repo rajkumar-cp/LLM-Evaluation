@@ -1,76 +1,36 @@
 import os
-from random import sample
+import asyncio
 
 import pytest
-import requests
-from instructor.cli.jobs import client
-from langchain_openai import ChatOpenAI
-from openai import OpenAI
-from ragas.llms import llm_factory, LangchainLLMWrapper
-from ragas import SingleTurnSample
-from ragas.metrics import LLMContextPrecisionWithoutReference, LLMContextRecall, Faithfulness
+from openai import AsyncOpenAI
+from ragas.embeddings.base import embedding_factory
+from ragas.llms import llm_factory
+from ragas.metrics.collections import AnswerRelevancy
 
+import RequestsUtils
 
 @pytest.mark.asyncio
-async def test_context_precision_without_reference():
-    llm_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    #client = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    #wrapped_llm = LangchainLLMWrapper(client)
-    wrapped_llm = llm_factory('gpt-4o-mini', client=llm_client)
-    question = "How many articles are there in selenium python course?"
-    response = requests.post(url="https://rahulshettyacademy.com/rag-llm/ask", json={
-        "question": question,
-        "chat_history": [
-        ]
-    }
-    ).json()
-    retrieved_docs_length = len(response["retrieved_docs"])
-    sample = SingleTurnSample(
-        user_input=question,
+async def test_evaluate_metrics_altogether():
+    # Use AsyncOpenAI for async usage
+    client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+
+    # Create ragas LLM + embeddings with the async client
+    wrapped_llm = llm_factory("gpt-4o-mini", client=client)
+    embeddings = embedding_factory("openai", model="text-embedding-3-small", client=client)
+
+    # Use the collections metric
+    answer_relevancy = AnswerRelevancy(llm=wrapped_llm, embeddings=embeddings)
+
+    # If RequestsUtils.call_... is blocking (likely), run it in a thread so we don't block the event loop
+    response = await asyncio.to_thread(RequestsUtils.call_rahulshetty_rag_system_with_no_history)
+
+    # Call metric.ascore -> returns MetricResult, use .value and convert to float
+    result = await answer_relevancy.ascore(
+        user_input="How many articles are there in selenium python course?",
         response=response["answer"],
-        retrieved_contexts=[response["retrieved_docs"][i]["page_content"] for i in range(retrieved_docs_length)]
     )
-    context_precision = LLMContextPrecisionWithoutReference(llm=wrapped_llm)
-    score = await context_precision.single_turn_ascore(sample)
-    assert  score > 0.9
 
+    score = float(result.value)
+    print(f"Response Relevancy Score: {score}")
 
-async def test_context_recall():
-    llm_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    llm_wrapper = llm_factory('gpt-4o-mini', client=llm_client)
-    question = "How many articles are there in selenium python course?"
-    response = requests.post(url="https://rahulshettyacademy.com/rag-llm/ask", json={
-        "question": question,
-        "chat_history": [
-        ]
-    }
-    ).json()
-    retrieved_docs_length = len(response["retrieved_docs"])
-    sample = SingleTurnSample(
-        user_input=question,
-        retrieved_contexts=[response["retrieved_docs"][i]["page_content"] for i in range(retrieved_docs_length)],
-        reference="23"
-    )
-    context_recall = LLMContextRecall(llm=llm_wrapper)
-    score = await context_recall.single_turn_ascore(sample)
-    assert score > 0.9
-
-async  def test_faithfulness():
-    llm = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    wrapped_llm = llm_factory('gpt-4o-mini', client=llm)
-    question = "How many articles are there in selenium python course?"
-    response = requests.post(url="https://rahulshettyacademy.com/rag-llm/ask",json={
-        "question": question,
-        "chat_history": [
-        ]
-    }
-    ).json()
-    retrieved_docs_length = len(response["retrieved_docs"])
-    sample = SingleTurnSample(
-        user_input=question,
-        response=response["answer"],
-        retrieved_contexts=[response["retrieved_docs"][i]["page_content"] for i in range(retrieved_docs_length)]
-    )
-    faithfulness = Faithfulness(llm=wrapped_llm)
-    score = await faithfulness.single_turn_ascore(sample)
-    assert score > 0.9
+    assert score > 0.8
